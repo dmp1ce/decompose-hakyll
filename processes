@@ -1,41 +1,56 @@
-DECOMPOSE_PROCESSES=( 'start_nginx_proxy' 'deploy')
+# Include common processes
+source $(_decompose-project-root)/.decompose/environment/lib/web/processes
+source $(_decompose-project-root)/.decompose/environment/lib/common/processes
+source $(_decompose-project-root)/.decompose/environment/lib/backup/processes
 
-_decompose-process-start_nginx_proxy() {
-  docker run -d -p 80:80 -e DEFAULT_HOST="$PROJECT_NGINX_DEFAULT_HOST" -v /var/run/docker.sock:/tmp/docker.sock:ro jwilder/nginx-proxy
-}
-_decompose-process-start_nginx_proxy_help() {
-  echo "  Start nginx-proxy which can host multiple sites" 
-}
+DECOMPOSE_PROCESSES=( 'build' 'up'
+  "${DECOMPOSE_WEB_PROCESSES[@]}" "${DECOMPOSE_COMMON_PROCESSES[@]}"
+  "${DECOMPOSE_BACKUP_PROCESSES[@]}" )
 
-# Deploy production site
-_decompose-process-deploy() {
-  echo "Beginning the deploy process"
-  
-  # Build DEVELOPMENT version first so the static files exist
-  echo "Building static content..."
+_decompose-process-build() {
+  echo "Building decompose templates..."
   decompose-process-templates 
+
+  echo "Creating version file..."
+  local project_root=$(_decompose-project-root)
+  local git_base_revision="`git -C $project_root describe --tags --match=v* --always --dirty 2>&1`"
+  # Set current base version
+  echo -e "$PROJECT_ENVIRONMENT\n$git_base_revision" > \
+    "$project_root"/"$PROJECT_VERSION_FILE"
+
+  # Pull the latest images
+  # Waiting for docker-compose fix:
+  # https://github.com/docker/compose/pull/1494
+  echo "Updating docker images..."
+  docker pull busybox
+  docker pull nginx
+  docker pull dmp1ce/hakyll
+  docker pull jwilder/nginx-proxy
+
+  # Remove 'source' container if this is production
+  echo "Rebuilding/recreating all containers..."
+  if [[ $PRODUCTION ]]; then
+    docker-compose rm -f source
+  fi
+
   docker-compose build
-  docker-compose up -d build
-
-  # Set to "production"
-  export PROJECT_ENVIRONMENT="production"; decompose-post-process-elements
-
-  # Build templates in 'production' mode
-  decompose-process-templates
- 
-  # Set production server 
-  eval "$(docker-machine env $PROJECT_PRODUCTION_SERVER)"
-
-  # Build containers
-  echo "Building containers on remote server. This might take awhile..."
-  # Rebuild source to prevent old source files floating around
-  docker-compose rm -f source
-  docker-compose build
-  echo "Starting containers on remote server. This might take awhile..."
-  docker-compose up -d
 }
-_decompose-process-deploy_help() {
-  echo "  Deploy production with the current code"
+_decompose-process-build_help() {
+  echo "  Build the project"
+}
+
+_decompose-process-up() {
+  if [[ $PRODUCTION ]]; then
+    docker-compose up -d --force-recreate
+  else
+    docker-compose up -d
+  fi
+
+  # Restart nginx-proxy
+  _decompose-process-restart_nginx_proxy
+}
+_decompose-process-up_help() {
+  echo "  Start project locally"
 }
 
 # vim:syntax=sh
