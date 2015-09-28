@@ -15,6 +15,7 @@ _decompose-process-build() {
   local project_root=$(_decompose-project-root)
   local git_base_revision="`git -C $project_root describe --tags --match=v* --always --dirty 2>&1`"
   # Set current base version
+  mkdir -p $(dirname "$project_root"/"$PROJECT_VERSION_FILE")
   echo -e "$PROJECT_ENVIRONMENT\n$git_base_revision" > \
     "$project_root"/"$PROJECT_VERSION_FILE"
 
