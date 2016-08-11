@@ -5,3 +5,5 @@
 # .decompose files
 /.decompose/elements
 /.decompose/processes
+
+/config_backup
