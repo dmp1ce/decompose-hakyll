@@ -1,17 +1,18 @@
-PROJECT_ENVIRONMENT="development"
-PROJECT_PRODUCTION_SERVER="dev"
+# Include common elements
+source $(_decompose-project-root)/.decompose/environment/lib/web/elements
+source $(_decompose-project-root)/.decompose/environment/lib/backup/elements
 
-PROJECT_NGINX_VIRTUAL_HOST_DEV="mysite.local"
-PROJECT_NGINX_VIRTUAL_HOST_PROD="mysite.local"
+ELEMENTS_POST_PROCESS+=( "${ELEMENTS_WEB_POST_PROCESS[@]}" )
 
-ELEMENTS_POST_PROCESS=( 'post' )
+# Project namespace
+PROJECT_NAMESPACE="hakyll"
 
-_decompose-elements-post() {
-  if [ "$PROJECT_ENVIRONMENT" == "production" ]; then
-    export PRODUCTION=true; unset DEVELOPMENT
-  else
-    export DEVELOPMENT=true; unset PRODUCTION
-  fi
-}
+# Set local user/group id
+PROJECT_HOST_USERID="$(id -u)"
+PROJECT_HOST_GROUPID="$(id -g)"
 
+# Allow project elements file to override all elements
+source $(_decompose-project-root)/elements
+
+PROJECT_DECOMPOSE_HAKYLL_ENVIRONMENT_VERSION="1.0.0"
 # vim:syntax=sh

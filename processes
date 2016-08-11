@@ -2,56 +2,72 @@
 source $(_decompose-project-root)/.decompose/environment/lib/web/processes
 source $(_decompose-project-root)/.decompose/environment/lib/common/processes
 source $(_decompose-project-root)/.decompose/environment/lib/backup/processes
+source $(_decompose-project-root)/.decompose/environment/lib/docker/processes
 
 DECOMPOSE_PROCESSES=( 'build' 'up'
   "${DECOMPOSE_WEB_PROCESSES[@]}" "${DECOMPOSE_COMMON_PROCESSES[@]}"
-  "${DECOMPOSE_BACKUP_PROCESSES[@]}" )
+  "${DECOMPOSE_BACKUP_PROCESSES[@]}" "${DECOMPOSE_DOCKER_PROCESSES[@]}" )
 
 _decompose-process-build() {
-  echo "Building decompose templates..."
-  decompose-process-templates 
+  local return_code=0
 
-  echo "Creating version file..."
-  local project_root=$(_decompose-project-root)
-  local git_base_revision="`git -C $project_root describe --tags --match=v* --always --dirty 2>&1`"
-  # Set current base version
-  mkdir -p $(dirname "$project_root"/"$PROJECT_VERSION_FILE")
-  echo -e "$PROJECT_ENVIRONMENT\n$git_base_revision" > \
-    "$project_root"/"$PROJECT_VERSION_FILE"
+  _decompose-process-common-build
+  return_code=$((return_code + $?))
+  _decompose-process_nginx_proxy_build
+  return_code=$((return_code + $?))
+  _decompose-process-build_version_file
+  return_code=$((return_code + $?))
+  _decompose-process-docker-build
+  return_code=$((return_code + $?))
 
-  # Pull the latest images
-  # Waiting for docker-compose fix:
-  # https://github.com/docker/compose/pull/1494
-  echo "Updating docker images..."
-  docker pull busybox
-  docker pull nginx
-  docker pull dmp1ce/hakyll
-  docker pull jwilder/nginx-proxy
-
-  # Remove 'source' container if this is production
-  echo "Rebuilding/recreating all containers..."
-  if [[ $PRODUCTION ]]; then
-    docker-compose rm -f source
+  # If there was an error, then just return now before creating release
+  if [ $return_code -ne 0 ]; then
+    echo "Return code of '$return_code' detected. Returning."
+    return $return_code
   fi
 
-  docker-compose build
+  echo "Set build directory permissions ..."
+  docker-compose run -u root --rm source bash -c "chmod 777 $PROJECT_BUILD_PATH && \
+chown $PROJECT_HOST_USERID:$PROJECT_HOST_GROUPID $PROJECT_BUILD_PATH/build && \
+chmod 777 $PROJECT_RELEASES_PATH"
+  return_code=$((return_code + $?))
+  # If there was an error, then just return now before creating release
+  if [ $return_code -ne 0 ]; then
+    echo "Return code of '$return_code' detected. Returning."
+    return $return_code
+  fi
+
+  echo "Update Hakyll source ..."
+  docker-compose run --rm source bash -c "$PROJECT_BUILD_PATH/build_context/update_source.bash"
+
+  echo "Run Hakyll build ..."
+  docker-compose run --rm build bash -c "$PROJECT_BUILD_PATH/build_context/prepare_build.bash && $PROJECT_BUILD_PATH/build/start_hakyll.bash"
+
+  echo "Copy site overrides ..."
+  echo "Create Hakyll build release ..."
+  docker-compose run --rm source bash -c "cp -rn \
+$PROJECT_BUILD_PATH/build_context/site-override/* \
+$PROJECT_BUILD_PATH/build/hakyll/_site && \
+$PROJECT_BUILD_PATH/build_context/create_release.bash"
+
+  return $return_code
 }
 _decompose-process-build_help() {
   echo "  Build the project"
 }
 
 _decompose-process-up() {
-  if [[ $PRODUCTION ]]; then
-    docker-compose up -d --force-recreate
-  else
-    docker-compose up -d
-  fi
+   # Set current release to latest
+  docker-compose run --rm -u root source ${PROJECT_BUILD_PATH}/build_context/set_current_release.bash
 
-  # Restart nginx-proxy
-  _decompose-process-restart_nginx_proxy
+  _decompose-process-docker-up
+  _decompose-process_nginx_proxy_up
+
+  # Clean up old releases
+  docker-compose run --rm -u root source ${PROJECT_BUILD_PATH}/build_context/cleanup_releases.bash
 }
 _decompose-process-up_help() {
   echo "  Start project locally"
 }
 
-# vim:syntax=sh
+# vim:syntax=sh tabstop=2 shiftwidth=2 expandtab

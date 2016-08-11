@@ -1,20 +1,28 @@
-{{#DEVELOPMENT}}
 build:
   build: containers/build/.
   volumes_from:
     - source
-  command: /home/hakyll/start_hakyll.sh
+{{#DEVELOPMENT}}
+  tty: true
 {{/DEVELOPMENT}}
+  command: bash -c "{{#DEVELOPMENT}}cd {{PROJECT_BUILD_PATH}}/build/hakyll; ./site watch --no-server{{/DEVELOPMENT}}{{#PRODUCTION}}echo 'Production build. Do nothing'{{/PRODUCTION}}"
 source:
   build: containers/source/.
-  command: "true"
+  command: echo "Source container. Do nothing."
   volumes:
-    - {{#DEVELOPMENT}}containers/source/hakyll:{{/DEVELOPMENT}}/home/hakyll/hakyll
+    - {{PROJECT_NAMESPACE}}_build:{{PROJECT_BUILD_PATH}}/build
+    - {{PROJECT_NAMESPACE}}_releases:{{PROJECT_RELEASES_PATH}}
+    {{#DEVELOPMENT}}
+    - ./containers/source/hakyll:{{PROJECT_BUILD_PATH}}/build/hakyll
+    {{/DEVELOPMENT}}
 web:
   build: containers/web/.
   volumes_from:
     - source
   environment:
-    - VIRTUAL_HOST={{PROJECT_NGINX_VIRTUAL_HOST}}
+    - VIRTUAL_HOST={{PROJECT_NGINX_PROXY_VIRTUAL_HOSTS}}
+{{#PRODUCTION}}
+  restart: always
+{{/PRODUCTION}}
 
 # vim:syntax=yaml

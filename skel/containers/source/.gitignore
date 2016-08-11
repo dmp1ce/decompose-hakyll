@@ -1,1 +1,9 @@
 .dockerignore
+Dockerfile
+site-override/*
+update_source.bash
+set_current_release.bash
+exclude_build_sync.txt
+create_release.bash
+cleanup_releases.bash
+! site-override/.keep
