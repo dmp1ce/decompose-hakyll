@@ -4,7 +4,7 @@ source $(_decompose-project-root)/.decompose/environment/lib/common/processes
 source $(_decompose-project-root)/.decompose/environment/lib/backup/processes
 source $(_decompose-project-root)/.decompose/environment/lib/docker/processes
 
-DECOMPOSE_PROCESSES=( 'build' 'up'
+DECOMPOSE_PROCESSES=( 'build' 'up' 'cron'
   "${DECOMPOSE_WEB_PROCESSES[@]}" "${DECOMPOSE_COMMON_PROCESSES[@]}"
   "${DECOMPOSE_BACKUP_PROCESSES[@]}" "${DECOMPOSE_DOCKER_PROCESSES[@]}" )
 
@@ -68,6 +68,34 @@ _decompose-process-up() {
 }
 _decompose-process-up_help() {
   echo "  Start project locally"
+}
+
+_decompose-process-cron() {
+  echo "Rebuilding the project ..."
+  decompose build
+  return_code=$((return_code + $?))
+  if [ $return_code -ne 0 ]; then
+    echo "Return code of '$return_code' detected. Stopping Cron process."
+    return $return_code
+  fi
+  echo "Restarting services ..."
+  decompose up
+  return_code=$((return_code + $?))
+  if [ $return_code -ne 0 ]; then
+    echo "Return code of '$return_code' detected. Stopping Cron process."
+    return $return_code
+  fi
+  echo "Removing dangling Docker images ..."
+  decompose remove-dangling-docker-images
+  return_code=$((return_code + $?))
+  echo "Backing up config ..."
+  decompose backup_config
+  return_code=$((return_code + $?))
+
+  return $return_code
+}
+_decompose-process-cron_help() {
+  echo "  Run cron tasks"
 }
 
 # vim:syntax=sh tabstop=2 shiftwidth=2 expandtab
